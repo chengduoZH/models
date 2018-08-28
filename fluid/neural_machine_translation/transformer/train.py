@@ -107,6 +107,11 @@ def parse_args():
         default=True,
         help="The flag indicating whether to run the task "
         "for continuous evaluation.")
+    parser.add_argument(
+        "--use_py_reader",
+        type=ast.literal_eval,
+        default=True,
+        help="Whether to use py_reader.")
 
     args = parser.parse_args()
     # Append args related to dict
@@ -367,8 +372,7 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
         unk_mark=args.special_token[2],
         # count start and end tokens out
         max_length=ModelHyperParams.max_length - 2,
-        clip_last_batch=False,
-        pkl_filename='train.pkl')
+        clip_last_batch=True)
 
     data_input_names = encoder_data_input_fields + \
                 decoder_data_input_fields[:-1] + label_data_input_fields
@@ -414,14 +418,20 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
     batch_time = []
     pass_start_time = time.time()
     for pass_id in xrange(TrainTaskConfig.pass_num):
-        pyreader.decorate_tensor_provider(train_reader_provider)
-        pyreader.start()
+        if args.use_py_reader:
+            pyreader.decorate_tensor_provider(train_reader_provider)
+            pyreader.start()
+
         batch_id = 0
 
         while True:
             try:
                 beg = time.time()
-                outs = train_exe.run(fetch_list=[sum_cost.name, token_num.name])
+                if args.use_py_reader:
+                    outs = train_exe.run(
+                        fetch_list=[sum_cost.name, token_num.name])
+                # else:
+
                 batch_time.append(time.time() - beg)
             except:
                 # The current pass is over.
@@ -515,7 +525,7 @@ def train(args):
                 ModelHyperParams.dropout,
                 ModelHyperParams.weight_sharing,
                 TrainTaskConfig.label_smooth_eps,
-                use_py_reader=True)
+                use_py_reader=args.use_py_reader)
 
             lr_decay = fluid.layers \
                     .learning_rate_scheduler \
