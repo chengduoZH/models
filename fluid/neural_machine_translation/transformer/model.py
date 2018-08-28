@@ -419,8 +419,8 @@ def transformer(src_vocab_size,
 
     enc_inputs = all_inputs[0:enc_inputs_len]
     dec_inputs = all_inputs[enc_inputs_len:enc_inputs_len + dec_inputs_len]
-    label = all_inputs[-2]
-    weights = all_inputs[-1]
+    label = all_inputs[-4]
+    weights = all_inputs[-3]
 
     enc_output = wrap_encoder(
         src_vocab_size,

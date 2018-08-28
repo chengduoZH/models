@@ -301,8 +301,7 @@ def test_context(exe, avg_cost, train_exe, dev_count, data_input_names,
         max_length=ModelHyperParams.max_length - 2,
         clip_last_batch=False,
         shuffle=False,
-        shuffle_batch=False,
-        pkl_filename='test.pkl')
+        shuffle_batch=False)
 
     def test_reader_provider():
         feed_order = \
@@ -380,12 +379,13 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
     pos_enc = position_encoding_init(ModelHyperParams.max_length + 1,
                                      ModelHyperParams.d_model)
 
-    def train_reader_provider():
-        feed_order = \
+    feed_order = \
             encoder_data_input_fields + \
              decoder_data_input_fields[:-1] + \
-              label_data_input_fields + pos_enc_param_names
+              label_data_input_fields
 
+    def train_reader_provider():
+        pyreader_feed_order = feed_order + pos_enc_param_names
         for batch_id, data in enumerate(train_data.batch_generator()):
             data_input_dict, num_token = \
                 prepare_batch_input(data, data_input_names,
@@ -395,7 +395,27 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
             total_dict = dict(data_input_dict.items())
             for name in pos_enc_param_names:
                 total_dict[name] = pos_enc
-            yield [total_dict[item] for item in feed_order]
+            yield [total_dict[item] for item in pyreader_feed_order]
+
+    init = False
+
+    def get_feed_list(func=train_reader_provider):
+        input_list_order = feed_order + pos_enc_param_names
+        train_data = read_multiple(
+            reader=func, count=dev_count if args.use_token_batch else 1)
+
+        for input_list in train_data():
+            feed_list = []
+            for place_id, data_buffer in enumerate(
+                    split_data(
+                        input_list, num_part=dev_count)):
+                inputs = zip(input_list_order, data_buffer)
+                feed_list.append(dict(inputs))
+                if init:
+                    for var in pos_enc_param_names:
+                        feed_list[-1][var] = []
+                init = True
+            yield feed_list
 
     build_strategy = fluid.BuildStrategy()
     train_exe = fluid.ParallelExecutor(
@@ -421,21 +441,26 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
         if args.use_py_reader:
             pyreader.decorate_tensor_provider(train_reader_provider)
             pyreader.start()
+        else:
+            feed_data_iter = get_feed_list()
 
         batch_id = 0
-
         while True:
             try:
                 beg = time.time()
                 if args.use_py_reader:
                     outs = train_exe.run(
                         fetch_list=[sum_cost.name, token_num.name])
-                # else:
-
+                else:
+                    feed_list = feed_data_iter.next()
+                    outs = train_exe.run(
+                        fetch_list=[sum_cost.name, token_num.name],
+                        feed=feed_list)
                 batch_time.append(time.time() - beg)
             except:
                 # The current pass is over.
-                pyreader.reset()
+                if args.use_py_reader:
+                    pyreader.reset()
                 break
 
             sum_cost_val, token_num_val = np.array(outs[0]), np.array(outs[1])
