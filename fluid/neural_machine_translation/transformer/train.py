@@ -313,13 +313,26 @@ def test_context(exe, avg_cost, train_exe, dev_count, data_input_names,
             total_dict = dict(data_input_dict.items())
             yield [total_dict[item] for item in feed_order]
 
+    pos_enc = position_encoding_init(ModelHyperParams.max_length + 1,
+                                     ModelHyperParams.d_model)
+    position_encoding_init_list = []
+    for i in range(dev_count):
+        position_encoding = {}
+        for name in pos_enc_param_names:
+            position_encoding[name] = pos_enc
+        position_encoding_init_list.append(position_encoding)
+
     exe.run(startup_prog)
     test_exe = fluid.ParallelExecutor(
         use_cuda=TrainTaskConfig.use_gpu,
         main_program=test_prog,
         share_vars_from=train_exe)
 
+    position_encoding_init = False
+
     def test(exe=test_exe, pyreader=test_pyreader):
+        global position_encoding_init
+        global position_encoding_init_list
         test_total_cost = 0
         test_total_token = 1
         pyreader.decorate_tensor_provider(test_reader_provider)
@@ -327,7 +340,10 @@ def test_context(exe, avg_cost, train_exe, dev_count, data_input_names,
 
         while True:
             try:
-                outs = exe.run(fetch_list=[sum_cost.name, token_num.name])
+                outs = exe.run(fetch_list=[sum_cost.name, token_num.name],
+                               feed=position_encoding_init_list
+                               if not position_encoding_init else None)
+                position_encoding_init = True
             except:
                 pyreader.reset()
                 break
