@@ -123,6 +123,18 @@ def parse_args():
     return args
 
 
+def get_position_enc():
+    pos_enc = position_encoding_init(ModelHyperParams.max_length + 1,
+                                     ModelHyperParams.d_model)
+    position_encoding_init_list = []
+    for i in range(dev_count):
+        position_encoding = {}
+        for name in pos_enc_param_names:
+            position_encoding[name] = pos_enc
+        position_encoding_init_list.append(position_encoding)
+    return position_encoding_init_list
+
+
 def pad_batch_data(insts,
                    pad_idx,
                    n_head,
@@ -313,26 +325,16 @@ def test_context(exe, avg_cost, train_exe, dev_count, data_input_names,
             total_dict = dict(data_input_dict.items())
             yield [total_dict[item] for item in feed_order]
 
-    pos_enc = position_encoding_init(ModelHyperParams.max_length + 1,
-                                     ModelHyperParams.d_model)
-    position_encoding_init_list = []
-    for i in range(dev_count):
-        position_encoding = {}
-        for name in pos_enc_param_names:
-            position_encoding[name] = pos_enc
-        position_encoding_init_list.append(position_encoding)
-
     exe.run(startup_prog)
     test_exe = fluid.ParallelExecutor(
         use_cuda=TrainTaskConfig.use_gpu,
         main_program=test_prog,
         share_vars_from=train_exe)
 
-    position_encoding_init = False
-
     def test(exe=test_exe, pyreader=test_pyreader):
-        global position_encoding_init
-        global position_encoding_init_list
+        position_encoding_init_list = get_position_enc()
+        position_encoding_init_flag = False
+
         test_total_cost = 0
         test_total_token = 1
         pyreader.decorate_tensor_provider(test_reader_provider)
@@ -342,8 +344,8 @@ def test_context(exe, avg_cost, train_exe, dev_count, data_input_names,
             try:
                 outs = exe.run(fetch_list=[sum_cost.name, token_num.name],
                                feed=position_encoding_init_list
-                               if not position_encoding_init else None)
-                position_encoding_init = True
+                               if not position_encoding_init_flag else None)
+                position_encoding_init_flag = True
             except:
                 pyreader.reset()
                 break
@@ -400,18 +402,7 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
                                     ModelHyperParams.eos_idx,
                                     ModelHyperParams.n_head, ModelHyperParams.d_model)
             total_dict = dict(data_input_dict.items())
-            # for name in pos_enc_param_names:
-            #     total_dict[name] = pos_enc
             yield [total_dict[item] for item in feed_order]
-
-    pos_enc = position_encoding_init(ModelHyperParams.max_length + 1,
-                                     ModelHyperParams.d_model)
-    position_encoding_init_list = []
-    for i in range(dev_count):
-        position_encoding = {}
-        for name in pos_enc_param_names:
-            position_encoding[name] = pos_enc
-        position_encoding_init_list.append(position_encoding)
 
     build_strategy = fluid.BuildStrategy()
     train_exe = fluid.ParallelExecutor(
@@ -431,9 +422,10 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
                         np.log(TrainTaskConfig.label_smooth_eps / (
                             ModelHyperParams.trg_vocab_size - 1) + 1e-20))
 
+    position_encoding_init_flag = False
+    position_encoding_init_list = get_position_enc()
     batch_time = []
     pass_start_time = time.time()
-    init = False
     for pass_id in xrange(TrainTaskConfig.pass_num):
         pyreader.decorate_tensor_provider(train_reader_provider)
         pyreader.start()
@@ -443,9 +435,10 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
                 beg = time.time()
                 outs = train_exe.run(
                     fetch_list=[sum_cost.name, token_num.name],
-                    feed=position_encoding_init_list if not init else None)
+                    feed=position_encoding_init_list
+                    if not position_encoding_init_flag else None)
                 batch_time.append(time.time() - beg)
-                init = True
+                inposition_encoding_init_flagit = True
             except:
                 # The current pass is over.
                 pyreader.reset()
