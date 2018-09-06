@@ -107,10 +107,9 @@ def parse_args():
         help="The flag indicating whether to run the task "
         "for continuous evaluation.")
     parser.add_argument(
-        "--open_mem_opt",
-        type=ast.literal_eval,
-        default=True,
-        help="Whether to use memory optimization.")
+        "--fuse_adjacent_ops", type=ast.literal_eval, default=False, help="")
+    parser.add_argument(
+        "--open_mem_opt", type=ast.literal_eval, default=False, help="")
 
     args = parser.parse_args()
     # Append args related to dict
@@ -410,6 +409,7 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
             yield [total_dict[item] for item in feed_order]
 
     build_strategy = fluid.BuildStrategy()
+    build_strategy.fuse_adjacent_ops = True if args.fuse_adjacent_ops else False
     train_exe = fluid.ParallelExecutor(
         use_cuda=TrainTaskConfig.use_gpu,
         loss_name=avg_cost.name,
@@ -434,8 +434,10 @@ def train_loop(exe, train_progm, startup_prog, dev_count, sum_cost, avg_cost,
     for pass_id in xrange(TrainTaskConfig.pass_num):
         pyreader.decorate_tensor_provider(train_reader_provider)
         pyreader.start()
+        #time.sleep(10)
         batch_id = 0
         while True:
+
             try:
                 beg = time.time()
                 outs = train_exe.run(
