@@ -204,7 +204,7 @@ def find_best_answer_for_inst(sample, start_prob, end_prob, inst_lod):
 def validation(inference_program, avg_cost, s_probs, e_probs, match, feed_order,
                place, dev_count, vocab, brc_data, logger, args):
     """
-        
+
     """
     parallel_executor = fluid.ParallelExecutor(
         main_program=inference_program,
@@ -360,22 +360,29 @@ def train(logger, args):
             # build optimizer
             if args.optim == 'sgd':
                 optimizer = fluid.optimizer.SGD(
-                    learning_rate=args.learning_rate)
+                    learning_rate=args.learning_rate,
+                    regularization=fluid.regularizer.L2DecayRegularizer(
+                        regularization_coeff=args.weight_decay))
             elif args.optim == 'adam':
                 optimizer = fluid.optimizer.Adam(
-                    learning_rate=args.learning_rate)
+                    learning_rate=args.learning_rate,
+                    regularization=fluid.regularizer.L2DecayRegularizer(
+                        regularization_coeff=args.weight_decay))
             elif args.optim == 'rprop':
                 optimizer = fluid.optimizer.RMSPropOptimizer(
-                    learning_rate=args.learning_rate)
+                    learning_rate=args.learning_rate,
+                    regularization=fluid.regularizer.L2DecayRegularizer(
+                        regularization_coeff=args.weight_decay))
             else:
                 logger.error('Unsupported optimizer: {}'.format(args.optim))
                 exit(-1)
-            if args.weight_decay > 0.0:
-                obj_func = avg_cost + args.weight_decay * l2_loss(main_program)
-                optimizer.minimize(obj_func)
-            else:
-                obj_func = avg_cost
-                optimizer.minimize(obj_func)
+            optimizer.minimize(avg_cost)
+            #if args.weight_decay > 0.0:
+            #    obj_func = avg_cost + args.weight_decay * l2_loss(main_program)
+            #    optimizer.minimize(obj_func)
+            #else:
+            #    obj_func = avg_cost
+            #    optimizer.minimize(obj_func)
 
             # initialize parameters
             place = core.CUDAPlace(0) if args.use_gpu else core.CPUPlace()
@@ -418,15 +425,13 @@ def train(logger, args):
                     feed_data = batch_reader(batch_list, args)
                     fetch_outs = parallel_executor.run(
                         feed=list(feeder.feed_parallel(feed_data, dev_count)),
-                        fetch_list=[obj_func.name],
+                        fetch_list=[avg_cost.name],
                         return_numpy=False)
                     cost_train = np.array(fetch_outs[0]).mean()
                     total_num += args.batch_size * dev_count
                     n_batch_loss += cost_train
                     total_loss += cost_train * args.batch_size * dev_count
 
-                    if args.enable_ce and batch_id >= 100:
-                        break
                     if log_every_n_batch > 0 and batch_id % log_every_n_batch == 0:
                         print_para(main_program, parallel_executor, logger,
                                    args)

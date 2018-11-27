@@ -67,7 +67,7 @@ def train():
     optimizer = fluid.optimizer.Adam(
         learning_rate=args.learning_rate,
         regularization=fluid.regularizer.L2DecayRegularizer(
-            regularization_coeff=1e-5))
+            regularization_coeff=1e-3))
 
     optimizer.minimize(avg_cost)
 
@@ -139,8 +139,6 @@ def train():
             print('pass_id=%d, batch_id=%d, train_loss: %f' %
                   (pass_id, batch_id, avg_cost_train))
             # This is for continuous evaluation only
-            if args.enable_ce and batch_id >= 100:
-                break
 
         pass_end_time = time.time()
         test_loss = validation()
