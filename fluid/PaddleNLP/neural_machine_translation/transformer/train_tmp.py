@@ -468,8 +468,8 @@ def train_loop(exe,
 
     # For faster executor
     exec_strategy = fluid.ExecutionStrategy()
-    #exec_strategy.num_threads = 2
     exec_strategy.use_experimental_executor = True
+    #exec_strategy.num_threads = 2
     # exec_strategy.num_iteration_per_drop_scope = 5
     build_strategy = fluid.BuildStrategy()
     # Since the token number differs among devices, customize gradient scale to
@@ -546,16 +546,6 @@ def train_loop(exe,
                              args.fetch_steps / (time.time() - avg_batch_time)))
                         avg_batch_time = time.time()
 
-                if step_idx % TrainTaskConfig.save_freq == 0 and step_idx > 0:
-                    fluid.io.save_persistables(
-                        exe,
-                        os.path.join(TrainTaskConfig.ckpt_dir,
-                                     "latest.checkpoint"), train_prog)
-                    fluid.io.save_params(
-                        exe,
-                        os.path.join(TrainTaskConfig.model_dir,
-                                     "iter_" + str(step_idx) + ".infer.model"),
-                        train_prog)
 
                 init_flag = False
                 batch_id += 1

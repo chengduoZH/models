@@ -439,7 +439,7 @@ def make_all_inputs(input_fields):
 
 def make_all_py_reader_inputs(input_fields, is_test=False):
     reader = layers.py_reader(
-        capacity=20,
+        capacity=1,
         name="test_reader" if is_test else "train_reader",
         shapes=[input_descs[input_field][0] for input_field in input_fields],
         dtypes=[input_descs[input_field][1] for input_field in input_fields],
@@ -447,7 +447,8 @@ def make_all_py_reader_inputs(input_fields, is_test=False):
             input_descs[input_field][2]
             if len(input_descs[input_field]) == 3 else 0
             for input_field in input_fields
-        ])
+        ], 
+        use_double_buffer=False)
     return layers.read_file(reader), reader
 
 
@@ -487,6 +488,23 @@ def transformer(src_vocab_size,
     dec_inputs_len = len(decoder_data_input_fields[:-1])
     enc_inputs = all_inputs[0:enc_inputs_len]
     dec_inputs = all_inputs[enc_inputs_len:enc_inputs_len + dec_inputs_len]
+ 
+    enc_ins = []
+    for ele in enc_inputs:
+        ele.persistable=True
+        ele = ele * 1.0
+        ele.stop_gradient=True
+        enc_ins.append(ele)
+    enc_inputs = enc_ins
+
+    dec_ins = []
+    for ele in dec_inputs:
+        ele.persistable=True
+        ele = ele * 1.0
+        ele.stop_gradient=True
+        dec_ins.append(ele)
+    dec_inputs = dec_ins
+
     label = all_inputs[-2]
     weights = all_inputs[-1]
 

@@ -79,7 +79,7 @@ class ModelHyperParams(object):
     # number of head used in multi-head attention.
     n_head = 8
     # number of sub-layers to be stacked in the encoder and decoder.
-    n_layer = 6
+    n_layer = 2# 6
     # dropout rates of different modules.
     prepostprocess_dropout = 0.1
     attention_dropout = 0.1
