@@ -18,7 +18,7 @@ class TrainTaskConfig(object):
     # the weight used to mix up the ground-truth distribution and the fixed
     # uniform distribution in label smoothing when training.
     # Set this as zero if label smoothing is not wanted.
-    label_smooth_eps = 0.1
+    label_smooth_eps = 0.0  #0.1
     # the directory for saving trained models.
     model_dir = "trained_models"
     # the directory for saving checkpoints.
@@ -77,22 +77,22 @@ class ModelHyperParams(object):
     # the dimension that values are projected to for dot-product attention.
     d_value = 64
     # number of head used in multi-head attention.
-    n_head = 8
+    n_head = 1
     # number of sub-layers to be stacked in the encoder and decoder.
-    n_layer = 6
+    n_layer = 1# 6
     # dropout rates of different modules.
     prepostprocess_dropout = 0.1
     attention_dropout = 0.1
-    relu_dropout = 0.1
+    relu_dropout = 0.0 # 0.1
     # to process before each sub-layer
-    preprocess_cmd = "n"  # layer normalization
+    preprocess_cmd = ""#"n"  # layer normalization
     # to process after each sub-layer
-    postprocess_cmd = "da"  # dropout + residual connection
+    postprocess_cmd = ""#"da"  # dropout + residual connection
     # random seed used in dropout for CE.
     dropout_seed = None
     # the flag indicating whether to share embedding and softmax weights.
     # vocabularies in source and target should be same for weight sharing.
-    weight_sharing = True
+    weight_sharing = False # True
 
 
 def merge_cfg_from_list(cfg_list, g_cfgs):
@@ -178,13 +178,14 @@ pos_enc_param_names = (
 # separated inputs for different usages.
 encoder_data_input_fields = (
     "src_word",
-    "src_pos",
-    "src_slf_attn_bias", )
+    # "src_pos",
+    # "src_slf_attn_bias", 
+    )
 decoder_data_input_fields = (
     "trg_word",
-    "trg_pos",
-    "trg_slf_attn_bias",
-    "trg_src_attn_bias",
+    # "trg_pos",
+    # "trg_slf_attn_bias",
+    # "trg_src_attn_bias",
     "enc_output", )
 label_data_input_fields = (
     "lbl_word",
@@ -195,3 +196,5 @@ fast_decoder_data_input_fields = (
     "trg_word",
     "init_score",
     "trg_src_attn_bias", )
+
+

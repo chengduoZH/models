@@ -251,8 +251,12 @@ def prepare_batch_input(insts, data_input_names, src_pad_idx, trg_pad_idx,
 
     data_input_dict = dict(
         zip(data_input_names, [
-            src_word, src_pos, src_slf_attn_bias, trg_word, trg_pos,
-            trg_slf_attn_bias, trg_src_attn_bias, lbl_word, lbl_weight
+            src_word, #src_pos,
+            #src_slf_attn_bias, 
+            trg_word, #trg_pos,
+            #trg_slf_attn_bias, 
+            # trg_src_attn_bias, 
+            lbl_word, lbl_weight
         ]))
 
     return data_input_dict, np.asarray([num_token], dtype="float32")
@@ -468,9 +472,11 @@ def train_loop(exe,
 
     # For faster executor
     exec_strategy = fluid.ExecutionStrategy()
+    #exec_strategy.num_threads = 2
     exec_strategy.use_experimental_executor = True
     # exec_strategy.num_iteration_per_drop_scope = 5
     build_strategy = fluid.BuildStrategy()
+    build_strategy.remove_unnecessary_lock = 1
     # Since the token number differs among devices, customize gradient scale to
     # use token average cost among multi-devices. and the gradient scale is
     # `1 / token_number` for average cost.
@@ -498,7 +504,7 @@ def train_loop(exe,
 
     step_idx = 0
     init_flag = True
-
+    
     logging.info("begin train")
     for pass_id in six.moves.xrange(TrainTaskConfig.pass_num):
         pass_start_time = time.time()
@@ -744,3 +750,5 @@ if __name__ == "__main__":
 
     args = parse_args()
     train(args)
+
+
