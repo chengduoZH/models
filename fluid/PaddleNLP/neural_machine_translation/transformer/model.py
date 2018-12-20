@@ -489,21 +489,21 @@ def transformer(src_vocab_size,
     enc_inputs = all_inputs[0:enc_inputs_len]
     dec_inputs = all_inputs[enc_inputs_len:enc_inputs_len + dec_inputs_len]
  
-    enc_ins = []
-    for ele in enc_inputs:
-        ele.persistable=True
-        ele = ele * 1.0
-        ele.stop_gradient=True
-        enc_ins.append(ele)
-    enc_inputs = enc_ins
+    #enc_ins = []
+    #for ele in enc_inputs:
+    #    ele.persistable=True
+    #    ele = ele * 1.0
+    #    ele.stop_gradient=True
+    #    enc_ins.append(ele)
+    #enc_inputs = enc_ins
 
-    dec_ins = []
-    for ele in dec_inputs:
-        ele.persistable=True
-        ele = ele * 1.0
-        ele.stop_gradient=True
-        dec_ins.append(ele)
-    dec_inputs = dec_ins
+    #dec_ins = []
+    #for ele in dec_inputs:
+    #    ele.persistable=True
+    #    ele = ele * 1.0
+    #    ele.stop_gradient=True
+    #    dec_ins.append(ele)
+    #dec_inputs = dec_ins
 
     label = all_inputs[-2]
     weights = all_inputs[-1]

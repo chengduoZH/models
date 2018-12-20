@@ -18,7 +18,7 @@ class TrainTaskConfig(object):
     # the weight used to mix up the ground-truth distribution and the fixed
     # uniform distribution in label smoothing when training.
     # Set this as zero if label smoothing is not wanted.
-    label_smooth_eps = 0.1
+    label_smooth_eps = 0.0  #0.1
     # the directory for saving trained models.
     model_dir = "trained_models"
     # the directory for saving checkpoints.
@@ -92,7 +92,7 @@ class ModelHyperParams(object):
     dropout_seed = None
     # the flag indicating whether to share embedding and softmax weights.
     # vocabularies in source and target should be same for weight sharing.
-    weight_sharing = True
+    weight_sharing = False # True
 
 
 def merge_cfg_from_list(cfg_list, g_cfgs):
