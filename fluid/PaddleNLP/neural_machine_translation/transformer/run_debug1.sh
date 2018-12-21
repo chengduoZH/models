@@ -3,7 +3,7 @@ export GLOG_v=4
 export GLOG_logtostderr=0
 export GLOG_log_dir="./"
 
-export CUDA_VISIBLE_DEVICES=3
+export CUDA_VISIBLE_DEVICES=2
 export DATA_ROOT=/paddle/TransformerData/
 #export FLAGS_benchmark=True
 #export DATA_ROOT=/home/chengduo/TransformerData/

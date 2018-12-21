@@ -263,10 +263,11 @@ def encoder_layer(enc_input,
     with the post_process_layer to add residual connection, layer normalization
     and droput.
     """
-    attn_output = multi_head_attention(
-        pre_process_layer(enc_input, preprocess_cmd,
-                          prepostprocess_dropout), None, None, attn_bias, d_key,
-        d_value, d_model, n_head, attention_dropout)
+    #attn_output = multi_head_attention(
+    #    pre_process_layer(enc_input, preprocess_cmd,
+    #                      prepostprocess_dropout), None, None, attn_bias, d_key,
+    #    d_value, d_model, n_head, attention_dropout)
+    attn_output = enc_input
     attn_output = post_process_layer(enc_input, attn_output, postprocess_cmd,
                                      prepostprocess_dropout)
     ffd_output = positionwise_feed_forward(
@@ -332,17 +333,18 @@ def decoder_layer(dec_input,
     The structure of this module is similar to that in the encoder part except
     a multi-head attention is added to implement encoder-decoder attention.
     """
-    slf_attn_output = multi_head_attention(
-        pre_process_layer(dec_input, preprocess_cmd, prepostprocess_dropout),
-        None,
-        None,
-        slf_attn_bias,
-        d_key,
-        d_value,
-        d_model,
-        n_head,
-        attention_dropout,
-        cache, )
+    #slf_attn_output = multi_head_attention(
+    #    pre_process_layer(dec_input, preprocess_cmd, prepostprocess_dropout),
+    #    None,
+    #    None,
+    #    slf_attn_bias,
+    #    d_key,
+    #    d_value,
+    #    d_model,
+    #    n_head,
+    #    attention_dropout,
+    #    cache, )
+    slf_attn_output = dec_input
     slf_attn_output = post_process_layer(
         dec_input,
         slf_attn_output,
@@ -439,7 +441,7 @@ def make_all_inputs(input_fields):
 
 def make_all_py_reader_inputs(input_fields, is_test=False):
     reader = layers.py_reader(
-        capacity=1,
+        capacity=20,
         name="test_reader" if is_test else "train_reader",
         shapes=[input_descs[input_field][0] for input_field in input_fields],
         dtypes=[input_descs[input_field][1] for input_field in input_fields],
@@ -447,8 +449,7 @@ def make_all_py_reader_inputs(input_fields, is_test=False):
             input_descs[input_field][2]
             if len(input_descs[input_field]) == 3 else 0
             for input_field in input_fields
-        ], 
-        use_double_buffer=False)
+        ])
     return layers.read_file(reader), reader
 
 
@@ -488,23 +489,6 @@ def transformer(src_vocab_size,
     dec_inputs_len = len(decoder_data_input_fields[:-1])
     enc_inputs = all_inputs[0:enc_inputs_len]
     dec_inputs = all_inputs[enc_inputs_len:enc_inputs_len + dec_inputs_len]
- 
-    #enc_ins = []
-    #for ele in enc_inputs:
-    #    ele.persistable=True
-    #    ele = ele * 1.0
-    #    ele.stop_gradient=True
-    #    enc_ins.append(ele)
-    #enc_inputs = enc_ins
-
-    #dec_ins = []
-    #for ele in dec_inputs:
-    #    ele.persistable=True
-    #    ele = ele * 1.0
-    #    ele.stop_gradient=True
-    #    dec_ins.append(ele)
-    #dec_inputs = dec_ins
-
     label = all_inputs[-2]
     weights = all_inputs[-1]
 
