@@ -336,18 +336,18 @@ def decoder_layer(dec_input,
     The structure of this module is similar to that in the encoder part except
     a multi-head attention is added to implement encoder-decoder attention.
     """
-    # slf_attn_output = multi_head_attention(
-    #     pre_process_layer(dec_input, preprocess_cmd, prepostprocess_dropout),
-    #     None,
-    #     None,
-    #     slf_attn_bias,
-    #     d_key,
-    #     d_value,
-    #     d_model,
-    #     n_head,
-    #     attention_dropout,
-    #     cache, )
-    slf_attn_output = dec_input
+    slf_attn_output = multi_head_attention(
+        pre_process_layer(dec_input, preprocess_cmd, prepostprocess_dropout),
+        None,
+        None,
+        slf_attn_bias,
+        d_key,
+        d_value,
+        d_model,
+        n_head,
+        attention_dropout,
+        cache, )
+    # slf_attn_output = dec_input
     # slf_attn_output = post_process_layer(
     #     dec_input,
     #     slf_attn_output,
