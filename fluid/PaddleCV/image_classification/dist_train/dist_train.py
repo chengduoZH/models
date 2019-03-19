@@ -240,11 +240,11 @@ def train_parallel(args):
     startup_exe.run(startup_prog)
 
     strategy = fluid.ExecutionStrategy()
+    strategy.use_experimental_executor = True
     strategy.num_threads = args.num_threads
     build_strategy = fluid.BuildStrategy()
     build_strategy.enable_inplace = False
     build_strategy.memory_optimize = False
-
     
     if args.reduce_strategy == "reduce":
         build_strategy.reduce_strategy = fluid.BuildStrategy(
