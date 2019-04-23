@@ -1,16 +1,6 @@
 #!/bin/bash
 export CUDA_VISIBLE_DEVICES=0,1,2,3
 export PYTHONPATH=/paddle/zcd_Paddle/build_fast/python
-export FLAGS_fuse_parameter_memory_size=1310720
-export FLAGS_fuse_parameter_groups_size=3
-#export PYTHONPATH=/ssd2/zhaochengduo/zcd_Paddle/build/python
-#export FLAGS_reader_queue_speed_test_mode=1
-
-#export GLOG_vmodule=build_strategy=2
-#export FLAGS_sync_nccl_allreduce=1
-
-export FLAGS_enable_parallel_graph=0
-export FLAGS_sync_nccl_allreduce=1
 
 export MODEL="DistResNet"
 export PADDLE_TRAINER_ENDPOINTS="127.0.0.1:7160,127.0.0.1:7161"
