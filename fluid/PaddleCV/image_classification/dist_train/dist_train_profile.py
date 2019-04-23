@@ -35,6 +35,17 @@ from batch_merge import copyback_repeat_bn_params, append_bn_repeat_init_op
 from dist_utils import pserver_prepare, nccl2_prepare
 from env import dist_env
 
+import paddle.fluid.profiler as profiler
+import contextlib
+
+@contextlib.contextmanager
+def profile_context(profile=True):
+   if profile:
+       with profiler.profiler('All', 'total', '/tmp/profile_file2'):
+           yield
+   else:
+       yield
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     add_arg = functools.partial(add_arguments, argparser=parser)
@@ -67,7 +78,6 @@ def parse_args():
     add_arg('reduce_strategy',    str,  "allreduce",        "Choose from reduce or allreduce.")
     add_arg('skip_unbalanced_data', bool, False,            "Skip data not if data not balanced on nodes.")
     # yapf: enable
-    add_arg('use_default_executor', bool, False,            "Skip data not if data not balanced on nodes.")
     args = parser.parse_args()
     return args
 
@@ -241,13 +251,12 @@ def train_parallel(args):
     startup_exe.run(startup_prog)
 
     strategy = fluid.ExecutionStrategy()
-    strategy.use_experimental_executor = not args.use_default_executor
+    strategy.use_experimental_executor = False
     strategy.num_threads = args.num_threads
     build_strategy = fluid.BuildStrategy()
     build_strategy.enable_inplace = False
     build_strategy.memory_optimize = False
-    #build_strategy.fuse_all_reduce_ops = True
-    build_strategy.fuse_all_optimizer_ops = True
+    build_strategy.fuse_all_reduce_ops = True    
 
     if args.reduce_strategy == "reduce":
         build_strategy.reduce_strategy = fluid.BuildStrategy(
@@ -304,15 +313,21 @@ def train_parallel(args):
         train_pyreader.start()
         while True:
             try:
-                if batch_id % 30 == 0:
-                    fetch_ret = exe.run(fetch_list)
-                    fetched_data = [np.mean(np.array(d)) for d in fetch_ret]
-                    print("Pass %d, batch %d, loss %s, acc1: %s, acc5: %s, avg batch time %.4f, batch time: %.4f" %
-                        (pass_id, batch_id, fetched_data[0], fetched_data[1],
-                         fetched_data[2], (time.time()-start_time) / batch_id, (time.time()-batch_start_time)/30))
-                    batch_start_time = time.time()
+                if batch_id > 15:
+                    with profile_context():
+                        for _ in range(5):
+                            fetch_ret = exe.run(fetch_list)
+                    return
                 else:
-                    fetch_ret = exe.run([])
+                    if batch_id % 30 == 0:
+                        fetch_ret = exe.run(fetch_list)
+                        fetched_data = [np.mean(np.array(d)) for d in fetch_ret]
+                        print("Pass %d, batch %d, loss %s, acc1: %s, acc5: %s, avg batch time %.4f, batch time: %.4f" %
+                            (pass_id, batch_id, fetched_data[0], fetched_data[1],
+                             fetched_data[2], (time.time()-start_time) / batch_id, (time.time() - batch_start_time)/30))
+                        batch_start_time = time.time()
+                    else:
+                        fetch_ret = exe.run([])
             except fluid.core.EOFException:
                 break
             except fluid.core.EnforceNotMet:
@@ -322,8 +337,6 @@ def train_parallel(args):
             batch_id += 1
             if args.skip_unbalanced_data and batch_id >= steps_per_pass:
                 break
-            if batch_id >= 2000:
-                return
 
         print_train_time(start_time, time.time(), num_samples)
         train_pyreader.reset()
