@@ -10,10 +10,10 @@ import time
 
 import numpy as np
 import paddle.fluid as fluid
-from paddle.fluid.transpiler.details import program_to_code
 
 import reader
 from config import *
+from desc import *
 from model import transformer, position_encoding_init
 import dist_utils
 
@@ -120,8 +120,6 @@ def parse_args():
         type=ast.literal_eval,
         default=True,
         help="The flag indicating whether to use memory optimization.")
-    parser.add_argument(
-        "--use_default_pe", type=ast.literal_eval, default=False, help="")
     parser.add_argument(
         "--use_py_reader",
         type=ast.literal_eval,
@@ -261,7 +259,12 @@ def prepare_batch_input(insts, data_input_names, src_pad_idx, trg_pad_idx,
     return data_input_dict, np.asarray([num_token], dtype="float32")
 
 
-def prepare_data_generator(args, is_test, count, pyreader):
+def prepare_data_generator(args,
+                           is_test,
+                           count,
+                           pyreader,
+                           py_reader_provider_wrapper,
+                           place=None):
     """
     Data generator wrapper for DataReader. If use py_reader, set the data
     provider for py_reader
@@ -373,8 +376,7 @@ def py_reader_provider_wrapper(data_reader):
                 data, data_input_names, ModelHyperParams.eos_idx,
                 ModelHyperParams.eos_idx, ModelHyperParams.n_head,
                 ModelHyperParams.d_model)
-            total_dict = dict(data_input_dict.items())
-            yield [total_dict[item] for item in data_input_names]
+            yield [data_input_dict[item] for item in data_input_names]
 
     return py_reader_provider
 
@@ -405,6 +407,7 @@ def test_context(exe, train_exe, dev_count):
                 ModelHyperParams.postprocess_cmd,
                 ModelHyperParams.weight_sharing,
                 TrainTaskConfig.label_smooth_eps,
+                ModelHyperParams.bos_idx,
                 use_py_reader=args.use_py_reader,
                 is_test=True)
     test_prog = test_prog.clone(for_test=True)
@@ -412,6 +415,10 @@ def test_context(exe, train_exe, dev_count):
         args, is_test=True, count=dev_count, pyreader=pyreader)
 
     exe.run(startup_prog)
+    if TrainTaskConfig.ckpt_path:
+        fluid.io.load_persistables(
+            exe, TrainTaskConfig.ckpt_path, main_program=test_prog)
+
     test_exe = fluid.ParallelExecutor(
         use_cuda=TrainTaskConfig.use_gpu,
         main_program=test_prog,
@@ -460,7 +467,11 @@ def train_loop(exe,
                nccl2_trainer_id=0):
     # Initialize the parameters.
     if TrainTaskConfig.ckpt_path:
-        fluid.io.load_persistables(exe, TrainTaskConfig.ckpt_path)
+        exe.run(startup_prog)  # to init pyreader for training
+        logging.info("load checkpoint from {}".format(
+            TrainTaskConfig.ckpt_path))
+        fluid.io.load_persistables(
+            exe, TrainTaskConfig.ckpt_path, main_program=train_prog)
     else:
         logging.info("init fluid.framework.default_startup_program")
         exe.run(startup_prog)
@@ -471,12 +482,9 @@ def train_loop(exe,
 
     # For faster executor
     exec_strategy = fluid.ExecutionStrategy()
-    exec_strategy.use_experimental_executor = not args.use_default_pe
     #exec_strategy.num_threads = dev_count
     exec_strategy.num_iteration_per_drop_scope = int(args.fetch_steps)
     build_strategy = fluid.BuildStrategy()
-    build_strategy.memory_optimize = False
-    build_strategy.enable_inplace = True
 
     sum_cost.persistable = True
     token_num.persistable = True
@@ -512,7 +520,7 @@ def train_loop(exe,
 
     step_idx = 0
     init_flag = True
-    avg_speed = []
+
     logging.info("begin train")
     for pass_id in six.moves.xrange(TrainTaskConfig.pass_num):
         pass_start_time = time.time()
@@ -522,7 +530,7 @@ def train_loop(exe,
             data_generator = None
         else:
             data_generator = train_data()
-
+        avg_speed = []
         batch_id = 0
         while True:
             try:
@@ -540,25 +548,24 @@ def train_loop(exe,
                     total_sum_cost = sum_cost_val.sum()
                     total_token_num = token_num_val.sum()
                     total_avg_cost = total_sum_cost / total_token_num
-
+                    speed = args.fetch_steps / (time.time() - avg_batch_time)
+                    avg_speed.append(speed)
                     if step_idx == 0:
                         logging.info(
                             "step_idx: %d, epoch: %d, batch: %d, avg loss: %f, "
                             "normalized loss: %f, ppl: %f" %
                             (step_idx, pass_id, batch_id, total_avg_cost,
                              total_avg_cost - loss_normalizer,
-                             np.exp([min(total_avg_cost, 100)])))
+                             np.exp([min(total_avg_cost, 100)]), speed))
                         avg_batch_time = time.time()
                     else:
-                        speed = args.fetch_steps / (
-                            time.time() - avg_batch_time)
-                        avg_speed.append(speed)
                         logging.info(
                             "step_idx: %d, epoch: %d, batch: %d, avg loss: %f, "
                             "normalized loss: %f, ppl: %f, speed: %.2f step/s" %
                             (step_idx, pass_id, batch_id, total_avg_cost,
                              total_avg_cost - loss_normalizer,
-                             np.exp([min(total_avg_cost, 100)]), speed))
+                             np.exp([min(total_avg_cost, 100)]),
+                             args.fetch_steps / (time.time() - avg_batch_time)))
                         avg_batch_time = time.time()
 
                 if step_idx % TrainTaskConfig.save_freq == 0 and step_idx > 0:
@@ -646,12 +653,10 @@ def train(args):
         gpu_id = int(os.environ.get('FLAGS_selected_gpus', 0))
         place = fluid.CUDAPlace(gpu_id)
         dev_count = get_device_num()
-        # place = fluid.CUDAPlace(0)
-        # dev_count = fluid.core.get_cuda_device_count()
 
     update_lr(TrainTaskConfig)
-
     exe = fluid.Executor(place)
+
     train_prog = fluid.Program()
     startup_prog = fluid.Program()
 
@@ -678,6 +683,7 @@ def train(args):
                 ModelHyperParams.postprocess_cmd,
                 ModelHyperParams.weight_sharing,
                 TrainTaskConfig.label_smooth_eps,
+                ModelHyperParams.bos_idx,
                 use_py_reader=args.use_py_reader,
                 is_test=False)
 
@@ -700,16 +706,13 @@ def train(args):
             optimizer.minimize(avg_cost)
 
     if args.use_mem_opt:
-        pass
-        # fluid.memory_optimize(train_prog)
+        fluid.memory_optimize(train_prog)
 
     if args.local:
         logging.info("local start_up:")
         train_loop(exe, train_prog, startup_prog, dev_count, sum_cost, avg_cost,
                    token_num, predict, pyreader)
     else:
-        print("This script cannot run in distributed mode.")
-        sys.exit(0)
         if args.update_method == "nccl2":
             trainer_id = int(os.getenv("PADDLE_TRAINER_ID", "0"))
             port = os.getenv("PADDLE_PORT")

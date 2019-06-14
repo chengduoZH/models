@@ -1,18 +1,19 @@
 import argparse
 import ast
+import multiprocessing
 import numpy as np
+import os
+import sys
+sys.path.append("../../models/neural_machine_translation/transformer/")
 from functools import partial
 
 import paddle
 import paddle.fluid as fluid
 
-import model
-from model import wrap_encoder as encoder
-from model import wrap_decoder as decoder
-from model import fast_decode as fast_decoder
-from config import *
-from train import pad_batch_data
 import reader
+from config import *
+from desc import *
+from model import fast_decode as fast_decoder
 
 
 def parse_args():
