@@ -99,10 +99,8 @@ class DataReader(object):
     """
     The data reader loads all data from files and produces batches of data
     in the way corresponding to settings.
-
     An example of returning a generator producing data batches whose data
     is shuffled in each pass and sorted in each pool:
-
     ```
     train_data = DataReader(
         src_vocab_fpath='data/src_vocab_file',
@@ -119,7 +117,6 @@ class DataReader(object):
         unk_mark='<unk>',
         clip_last_batch=False).batch_generator
     ```
-
     :param src_vocab_fpath: The path of vocabulary file of source language.
     :type src_vocab_fpath: basestring
     :param trg_vocab_fpath: The path of vocabulary file of target language.
