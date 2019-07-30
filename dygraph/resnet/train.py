@@ -20,11 +20,25 @@ import paddle.fluid as fluid
 from paddle.fluid.layer_helper import LayerHelper
 from paddle.fluid.dygraph.nn import Conv2D, Pool2D, BatchNorm, FC
 from paddle.fluid.dygraph.base import to_variable
-
+import time
 from paddle.fluid import framework
 
 import math
 import sys
+
+import paddle.fluid.profiler as profiler
+import contextlib
+
+
+@contextlib.contextmanager
+def profile_context(profile=True):
+    if profile:
+        with profiler.profiler('All', 'total', '/tmp/profile_file2_'
+                               ):  # +str(fluid.dygraph.parallel.Env().dev_id)):
+            yield
+    else:
+        yield
+
 
 IMAGENET1000 = 1281167
 base_lr = 0.1
@@ -39,8 +53,10 @@ def parse_args():
         type=ast.literal_eval,
         default=False,
         help="The flag indicating whether to shuffle instances in each pass.")
-    parser.add_argument("-e", "--epoch", default=120, type=int, help="set epoch")
-    parser.add_argument("-b", "--batch_size", default=32, type=int, help="set epoch")
+    parser.add_argument(
+        "-e", "--epoch", default=120, type=int, help="set epoch")
+    parser.add_argument(
+        "-b", "--batch_size", default=64, type=int, help="set epoch")
     parser.add_argument("--ce", action="store_true", help="run ce")
     args = parser.parse_args()
     return args
@@ -48,6 +64,7 @@ def parse_args():
 
 args = parse_args()
 batch_size = args.batch_size
+
 
 def optimizer_setting():
 
@@ -318,9 +335,9 @@ def train_resnet():
             #dict_state = resnet.state_dict()
 
             #resnet.load_dict( model_data )
-
+            time_consum_recorder = []
             print("load finished")
-
+            start = time.time()
             for batch_id, data in enumerate(train_reader()):
                 dy_x_data = np.array(
                     [x[0].reshape(3, 224, 224) for x in data]).astype('float32')
@@ -333,6 +350,32 @@ def train_resnet():
                 img = to_variable(dy_x_data)
                 label = to_variable(y_data)
                 label._stop_gradient = True
+
+                start_train = time.time()
+                if batch_id == 1000:  #fluid.dygraph.parallel.Env().dev_id == 1
+                    with profile_context():
+                        for _ in range(10):
+                            out = resnet(img)
+                            loss = fluid.layers.cross_entropy(
+                                input=out, label=label)
+                            avg_loss = fluid.layers.mean(x=loss)
+
+                            acc_top1 = fluid.layers.accuracy(
+                                input=out, label=label, k=1)
+                            acc_top5 = fluid.layers.accuracy(
+                                input=out, label=label, k=5)
+
+                            dy_out = avg_loss.numpy()
+
+                            if args.use_data_parallel:
+                                avg_loss = resnet.scale_loss(avg_loss)
+                                avg_loss.backward()
+                                resnet.apply_collective_grads()
+                            else:
+                                avg_loss.backward()
+
+                            optimizer.minimize(avg_loss)
+                            resnet.clear_gradients()
 
                 out = resnet(img)
                 loss = fluid.layers.cross_entropy(input=out, label=label)
@@ -353,17 +396,21 @@ def train_resnet():
                 optimizer.minimize(avg_loss)
                 resnet.clear_gradients()
 
+                time_consum = time.time() - start_train
+                time_consum_recorder.append(time_consum)
+                total_time_consum = time.time() - start
+                start = time.time()
 
                 total_loss += dy_out
                 total_acc1 += acc_top1.numpy()
                 total_acc5 += acc_top5.numpy()
                 total_sample += 1
                 #print("epoch id: %d, batch step: %d, loss: %f" % (eop, batch_id, dy_out))
-                if batch_id % 10 == 0:
-                    print( "epoch %d | batch step %d, loss %0.3f acc1 %0.3f acc5 %0.3f" % \
+                if batch_id % 1 == 0:
+                    print( "epoch %d | batch step %d, loss %0.3f acc1 %0.3f acc5 %0.3f, train_time %0.3f, total time consum: %0.3f" % \
                            ( eop, batch_id, total_loss / total_sample, \
-                             total_acc1 / total_sample, total_acc5 / total_sample))
-
+                             total_acc1 / total_sample, total_acc5 / total_sample, time_consum, total_time_consum))
+                #return
             if args.ce:
                 print("kpis\ttrain_acc1\t%0.3f" % (total_acc1 / total_sample))
                 print("kpis\ttrain_acc5\t%0.3f" % (total_acc5 / total_sample))
@@ -371,9 +418,16 @@ def train_resnet():
             print("epoch %d | batch step %d, loss %0.3f acc1 %0.3f acc5 %0.3f" % \
                   (eop, batch_id, total_loss / total_sample, \
                    total_acc1 / total_sample, total_acc5 / total_sample))
-            resnet.eval()
-            eval(resnet, test_reader)
-            fluid.dygraph.save_persistables(resnet.state_dict(), 'resnet_params')
+            time_consum_recorder.pop(0)
+            print(
+                "pass : {} finished, average time consum:{}, step:{}, total time:{}".
+                format(eop,
+                       np.average(time_consum_recorder),
+                       len(time_consum_recorder), np.sum(time_consum_recorder)))
+
+            #resnet.eval()
+            #eval(resnet, test_reader)
+            #fluid.dygraph.save_persistables(resnet.state_dict(), 'resnet_params')
 
 
 if __name__ == '__main__':

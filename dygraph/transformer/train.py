@@ -20,6 +20,20 @@ from paddle.fluid.dygraph import Embedding, LayerNorm, FC, to_variable, Layer, g
 import numpy as np
 import paddle
 import paddle.dataset.wmt16 as wmt16
+import time
+
+import paddle.fluid.profiler as profiler
+import contextlib
+
+
+@contextlib.contextmanager
+def profile_context(profile=True):
+    if profile:
+        with profiler.profiler('All', 'total', '/tmp/profile_file2_' +
+                               str(fluid.dygraph.parallel.Env().dev_id)):
+            yield
+    else:
+        yield
 
 
 def parse_args():
@@ -47,7 +61,7 @@ class TrainTaskConfig(object):
     pass_num = 30
     # the number of sequences contained in a mini-batch.
     # deprecated, set batch_size in args.
-    batch_size = 32
+    batch_size = 128  # 256 #32
     # the hyper parameters for Adam optimizer.
     # This static learning_rate will be multiplied to the LearningRateScheduler
     # derived learning rate the to get the final learning rate.
@@ -86,7 +100,7 @@ class ModelHyperParams(object):
     trg_pad_idx = 1
 
     # max length of sequences deciding the size of position encoding table.
-    max_length = 50
+    max_length = 128  #50
     # the dimension for word embeddings, which is also the last dimension of
     # the input and output of multi-head attention, position-wise feed-forward
     # networks, encoder and decoder.
@@ -1142,12 +1156,37 @@ def train():
 
         for i in range(200):
             dy_step = 0
+            time_consum_recorder = []
+
+            start = time.time()
+            idx = 0
             for batch in reader():
+                idx += 1
                 np_values = prepare_batch_input(
                     batch, ModelHyperParams.src_pad_idx,
                     ModelHyperParams.trg_pad_idx, ModelHyperParams.n_head)
 
                 enc_inputs, dec_inputs, label, weights = create_data(np_values)
+                # start train
+                start_train = time.time()
+                if idx == 1000:  #fluid.dygraph.parallel.Env().dev_id == 1
+                    with profile_context():
+                        for _ in range(10):
+                            dy_sum_cost, dy_avg_cost, dy_predict, dy_token_num = transformer(
+                                enc_inputs, dec_inputs, label, weights)
+
+                            if args.use_data_parallel:
+                                dy_avg_cost = transformer.scale_loss(
+                                    dy_avg_cost)
+                                dy_avg_cost.backward()
+                                transformer.apply_collective_grads()
+                            else:
+                                dy_avg_cost.backward()
+
+                            optimizer.minimize(dy_avg_cost)
+                            transformer.clear_gradients()
+                    #sys.exit(0)
+
                 dy_sum_cost, dy_avg_cost, dy_predict, dy_token_num = transformer(
                     enc_inputs, dec_inputs, label, weights)
 
@@ -1160,11 +1199,23 @@ def train():
 
                 optimizer.minimize(dy_avg_cost)
                 transformer.clear_gradients()
+                # end train
+                time_consum = time.time() - start_train
+                time_consum_recorder.append(time_consum)
+                total_time_consum = time.time() - start
+                start = time.time()
                 dy_step = dy_step + 1
-                if dy_step % 10 == 0:
-                    print("pass num : {}, batch_id: {}, dy_graph avg loss: {}".
-                          format(i, dy_step, dy_avg_cost.numpy()))
-            print("pass : {} finished".format(i))
+                if dy_step % 1 == 0:
+                    print(
+                        "pass num : {}, batch_id: {}, dy_graph avg loss: {}, train time consum:{}, total_time_consum:{}".
+                        format(i, dy_step,
+                               dy_avg_cost.numpy(), time_consum,
+                               total_time_consum))
+            print(
+                "pass : {} finished, average time consum:{}, step:{}, total time:{}".
+                format(i,
+                       np.average(time_consum_recorder),
+                       len(time_consum_recorder), np.sum(time_consum_recorder)))
 
 
 if __name__ == '__main__':
